@@ -93,17 +93,18 @@ const fileFilter = (req, file, cb) => {
 // });
 
 // Database Connection
-mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/companyDB", {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  retryWrites: true,
-  w: "majority"
-})
-.then(() => console.log("✅ MongoDB connected successfully"))
-.catch(err => {
-  console.error("❌ MongoDB connection error:", err);
-  process.exit(1);
-});
+// mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/companyDB", {
+//   useNewUrlParser: true,
+//   useUnifiedTopology: true,
+//   retryWrites: true,
+//   w: "majority"
+// })
+// .then(() => console.log("✅ MongoDB connected successfully"))
+// .catch(err => {
+//   console.error("❌ MongoDB connection error:", err);
+//   process.exit(1);
+// });
+mongoose.connect(process.env.MONGO_URI)
 
 // Rate Limiting
 const rateLimit = require("express-rate-limit");
