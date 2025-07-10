@@ -22,6 +22,8 @@ const busniesRoutes = require('./routes/busnies');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+const otpRoutes = require('./routes/otpRoutes');
+const transporter = require('./utils/emailSender');
 
 // 1. FIXED: Correct Static Files Configuration
 const publicDir = path.join(__dirname, 'public');
@@ -84,6 +86,9 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
+
+console.log("Transporter loaded successfully:", !!transporter);
+// const transporter = require(path.join(__dirname, 'utils', 'emailSender'));
 // const upload = multer({ 
 //   storage: storage,
 //   fileFilter: fileFilter,
@@ -93,18 +98,17 @@ const fileFilter = (req, file, cb) => {
 // });
 
 // Database Connection
-// mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/companyDB", {
-//   useNewUrlParser: true,
-//   useUnifiedTopology: true,
-//   retryWrites: true,
-//   w: "majority"
-// })
-// .then(() => console.log("✅ MongoDB connected successfully"))
-// .catch(err => {
-//   console.error("❌ MongoDB connection error:", err);
-//   process.exit(1);
-// });
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/companyDB", {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  retryWrites: true,
+  w: "majority"
+})
+.then(() => console.log("✅ MongoDB connected successfully"))
+.catch(err => {
+  console.error("❌ MongoDB connection error:", err);
+  process.exit(1);
+});
 
 // Rate Limiting
 const rateLimit = require("express-rate-limit");
@@ -117,6 +121,7 @@ app.use(limiter);
 // Routes
 app.use("/api/submit", submitRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+ app.use('/api', otpRoutes);
 // Routes
 app.use('/api/busnies', busniesRoutes);
 // 3. ADDED: Debug Endpoints
@@ -159,18 +164,85 @@ app.get("/health", (req, res) => {
 });
 
 // Authentication Routes (unchanged)
+// 🌐 AUTH ROUTES
+// 🧾 User Register
 app.post("/api/register", async (req, res) => {
-  /* ... existing code ... */
+  const { name, email, password } = req.body;
+  if (!email || !password || !name) {
+    return res.status(400).json({ error: "All fields required" });
+  }
+
+  try {
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ error: "User already exists" });
+
+    const hashed = await bcrypt.hash(password, 10);
+    const user = new User({ name, email, password: hashed });
+    await user.save();
+    res.json({ message: "Registered successfully" });
+  } catch (err) {
+    console.error("Register error:", err);
+    res.status(500).json({ error: "Registration failed" });
+  }
 });
 
+
+// 🔐 User Login
 app.post("/api/login", async (req, res) => {
-  /* ... existing code ... */
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(401).json({ error: "User not found" });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: "Invalid credentials" });
+
+    const token = jwt.sign({ email }, process.env.JWT_SECRET, {
+      expiresIn: "1h"
+    });
+
+    res.json({ token });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Login failed" });
+  }
 });
 
 // Email Service (unchanged)
+// // 📤 EMAIL CONTACT FORM
 app.post("/api/contact-email", async (req, res) => {
-  /* ... existing code ... */
+  const { name, email, message } = req.body;
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: email,
+    to: process.env.EMAIL_USER,
+    subject: `Message from ${name}`,
+    html: `
+       <h2>New Application Form Submission</h2>
+       <p><strong>Name:</strong> ${name}</p>
+       <p><strong>Email:</strong> ${email}</p>
+       <p><strong>Message:</strong> ${message}</p>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: "Email failed to send" });
+  }
 });
+
 
 // // Company Routes
 app.use('/api/companies', submitRoutes);
@@ -310,6 +382,49 @@ router.get('/agency/:id', async (req, res) => {
 });
 
 
+// Add this right after transporter creation
+transporter.verify((error) => {
+  if (error) {
+    console.error('❌ Email config error:', error);
+  } else {
+    console.log('✅ Email service ready');
+    
+    // Test with a REAL email address
+    const testEmail = 'your-real-email@gmail.com'; // CHANGE THIS
+    transporter.sendMail({
+      from: `"CipherERP" <${process.env.EMAIL_USER}>`,
+      to: testEmail,
+      subject: 'Test OTP System',
+      text: 'This confirms your email setup is working'
+    })
+    .then(info => console.log('Test email sent to:', testEmail))
+    .catch(err => console.error('Test email failed:', err));
+  }
+});
+
+
+// Add this test route to your index.js
+app.get('/direct-test', async (req, res) => {
+  try {
+    const info = await transporter.sendMail({
+      from: '"CipherERP" <yashveersingh7648@gmail.com>',
+      to: 'yashveersingh7648@gmail.com',
+      subject: 'DIRECT TEST - Please check spam',
+      text: 'If you receive this, OTP system will work',
+      html: '<p><strong>This is a direct test email</strong></p>'
+    });
+    res.json({ 
+      success: true,
+      message: 'Test email sent to yashveersingh7648@gmail.com',
+      messageId: info.messageId
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
