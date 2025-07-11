@@ -83,4 +83,28 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+
+router.get('/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    
+    // Find by email instead of ID
+    const agency = await AgencyModel.findOne({ companyEmail: email }).lean();
+    
+    if (!agency) {
+      return res.status(404).json({ message: 'Agency not found' });
+    }
+
+    // Add file URLs if needed
+    agency.logoUrl = agency.companyLogo 
+      ? `${process.env.BASE_URL || 'http://localhost:8000'}/uploads/${agency.companyLogo}`
+      : null;
+    
+    res.json(agency);
+  } catch (err) {
+    console.error('Error fetching agency:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
 module.exports = router;

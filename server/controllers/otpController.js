@@ -2,26 +2,44 @@
 // const OTP = require('../models/OTP');
 // const transporter = require('../utils/emailSender');
 
-// // Business email validation
+// // Email validation configuration
+// const EMAIL_CONFIG = {
+//   ALLOWED_PREFIXES: ['support', 'info', 'admin', 'hr', 'accounts']
+// };
+
+// // Enhanced email validation - checks prefix only, any domain allowed
 // const validateBusinessEmail = (email) => {
-//   const ALLOWED_PREFIXES = ['support', 'info', 'admin', 'hr', 'accounts'];
-//   const COMPANY_DOMAIN = '@ciphererp.com';
+//   if (!email || typeof email !== 'string') return false;
   
-//   if (!email.includes('@')) return false;
+//   // Check if email contains exactly one @ symbol
+//   const atCount = email.split('@').length - 1;
+//   if (atCount !== 1) return false;
   
 //   const [prefix] = email.split('@');
-//   return email.endsWith(COMPANY_DOMAIN) && 
-//          ALLOWED_PREFIXES.some(allowedPrefix => prefix.startsWith(allowedPrefix));
+  
+//   // Validate prefix only - domain can be anything
+//   const isValidPrefix = EMAIL_CONFIG.ALLOWED_PREFIXES.some(
+//     allowedPrefix => prefix.startsWith(allowedPrefix)
+//   );
+  
+//   return isValidPrefix;
 // };
 
 // exports.sendOTP = async (req, res) => {
 //   try {
 //     const { email } = req.body;
 
+//     if (!email) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Email is required'
+//       });
+//     }
+
 //     if (!validateBusinessEmail(email)) {
 //       return res.status(400).json({
 //         success: false,
-//         message: 'Only company business emails (support@, info@, admin@, hr@, accounts@)ciphererp.com are allowed'
+//         message: `Only business emails with prefixes (${EMAIL_CONFIG.ALLOWED_PREFIXES.join(', ')}) are allowed. Domain can be anything.`
 //       });
 //     }
 
@@ -33,12 +51,12 @@
 //     await OTP.findOneAndUpdate(
 //       { email },
 //       { otp, expiresAt },
-//       { upsert: true, new: true }
+//       { upsert: true, new: true, setDefaultsOnInsert: true }
 //     );
 
 //     // Send email
 //     const mailOptions = {
-//       from: `"CipherERP Business Portal" <support@ciphererp.com>`,
+//        from: `"COHORT Portal" <cohort-real-email@gmail.com>`,
 //       to: email,
 //       subject: 'Your Business Portal Access Code',
 //       html: `
@@ -78,6 +96,13 @@
 //   try {
 //     const { email, otp } = req.body;
 
+//     if (!email || !otp) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Email and OTP are required'
+//       });
+//     }
+
 //     if (!validateBusinessEmail(email)) {
 //       return res.status(400).json({
 //         success: false,
@@ -85,7 +110,7 @@
 //       });
 //     }
 
-//     if (!otp || otp.length !== 6) {
+//     if (otp.length !== 6 || !/^\d+$/.test(otp)) {
 //       return res.status(400).json({
 //         success: false,
 //         message: 'Please provide a valid 6-digit OTP'
@@ -133,22 +158,44 @@
 
 
 
-
-
-// Testing ka leya 
 const crypto = require('crypto');
 const OTP = require('../models/OTP');
 const transporter = require('../utils/emailSender');
 
-const sendOTP = async (req, res) => {
+// Email configuration
+const EMAIL_CONFIG = {
+  ALLOWED_PREFIXES: ['support', 'info', 'admin', 'hr', 'accounts'],
+  SENDER_NAME: 'COHORT Portal',
+  SENDER_EMAIL: 'cohort@gmail.com' 
+};
+
+// Validate business email format
+const validateBusinessEmail = (email) => {
+  if (!email || typeof email !== 'string') return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) return false;
+
+  const [prefix] = email.split('@');
+  return EMAIL_CONFIG.ALLOWED_PREFIXES.some(p => prefix.startsWith(p));
+};
+
+// Send OTP to business email
+exports.sendOTP = async (req, res) => {
   try {
     const { email } = req.body;
 
-    // Basic email validation
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Validate input
+    if (!email) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid email address'
+        message: 'Email is required'
+      });
+    }
+
+    if (!validateBusinessEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: `Only business emails with prefixes (${EMAIL_CONFIG.ALLOWED_PREFIXES.join(', ')}) are allowed`
       });
     }
 
@@ -163,86 +210,109 @@ const sendOTP = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Send email
+    // Prepare email with hardcoded sender
     const mailOptions = {
-      from: `"CipherERP Support" <yashveersingh7648@gmail.com>`,
+      from: `"${EMAIL_CONFIG.SENDER_NAME}" <${EMAIL_CONFIG.SENDER_EMAIL}>`,
       to: email,
-      subject: 'Your OTP Verification Code',
+      subject: 'Your COHORT Portal Access Code',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">OTP Verification</h2>
-          <p>Your one-time verification code is:</p>
+          <h2 style="color: #2563eb;">COHORT Portal OTP</h2>
+          <p>Your one-time access code is:</p>
           <div style="font-size: 24px; font-weight: bold; margin: 20px 0; padding: 15px; 
                background: #f3f4f6; display: inline-block; letter-spacing: 5px;">
             ${otp}
           </div>
-          <p>This code expires in 15 minutes.</p>
+          <p>This code will expire in 15 minutes.</p>
           <p style="color: #6b7280; font-size: 12px;">
-            If you didn't request this, please ignore this email.
+            For security reasons, please do not share this code.
           </p>
         </div>
-      `,
-      text: `Your OTP code is: ${otp}\nExpires in 15 minutes.`
+      `
     };
 
+    // Send email
     await transporter.sendMail(mailOptions);
 
+    // Return success response
     res.json({
       success: true,
-      message: `OTP sent to ${email}`,
-      // For testing only - remove in production
-      ...(process.env.NODE_ENV === 'development' && { debugOtp: otp })
+      message: 'OTP sent to your business email',
+      ...(process.env.NODE_ENV === 'development' && { debugOtp: otp }) // Only show OTP in development
     });
 
   } catch (error) {
-    console.error('OTP send error:', error);
+    console.error('Error sending OTP:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to send OTP',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Failed to send OTP. Please try again later.'
     });
   }
 };
 
-const verifyOTP = async (req, res) => {
+// Verify OTP
+exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    if (!email || !otp || otp.length !== 6) {
+    // Step 1: Validate input
+    if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide valid email and 6-digit OTP'
+        message: 'Email and OTP are required'
       });
     }
 
-    const validOTP = await OTP.findOneAndDelete({
-      email,
-      otp,
-      expiresAt: { $gt: new Date() }
-    });
+    if (!validateBusinessEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid business email format'
+      });
+    }
 
-    if (!validOTP) {
+    if (otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP format. Must be 6 digits.'
+      });
+    }
+
+    // Step 2: Check if OTP exists and is valid
+    const existingOTP = await OTP.findOne({ email, otp });
+
+    if (!existingOTP) {
       return res.status(400).json({
         success: false,
         message: 'Invalid or expired OTP'
       });
     }
 
-    res.json({
+    if (existingOTP.expiresAt < new Date()) {
+      await OTP.deleteOne({ _id: existingOTP._id }); // delete it anyway
+      return res.status(400).json({
+        success: false,
+        message: 'OTP expired'
+      });
+    }
+
+    // Step 3: OTP is valid, now delete it
+    await OTP.deleteOne({ _id: existingOTP._id });
+
+    // Step 4: Send success response
+    return res.status(200).json({
       success: true,
-      message: 'OTP verified successfully'
+      message: 'OTP verified successfully',
+      user: {
+        email,
+        verified: true
+      }
     });
 
   } catch (error) {
-    console.error('OTP verification error:', error);
-    res.status(500).json({
+    console.error('Error verifying OTP:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Error verifying OTP'
+      message: 'Server error while verifying OTP'
     });
   }
-};
-
-module.exports = {
-  sendOTP,
-  verifyOTP
 };

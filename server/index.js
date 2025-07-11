@@ -19,11 +19,13 @@ const User = require("./models/User");
 const Company = require("./models/FormData");
 const AgencyModel = require('./models/AgencyModel');
 const busniesRoutes = require('./routes/busnies');
+const agencyRoutes = require('./routes/agency');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 const otpRoutes = require('./routes/otpRoutes');
 const transporter = require('./utils/emailSender');
+const authenticateAgency = require("./middleware/authenticateAgency");
 
 // 1. FIXED: Correct Static Files Configuration
 const publicDir = path.join(__dirname, 'public');
@@ -122,6 +124,7 @@ app.use(limiter);
 app.use("/api/submit", submitRoutes);
 app.use("/api/dashboard", dashboardRoutes);
  app.use('/api', otpRoutes);
+ app.use('/api/agencies', agencyRoutes);
 // Routes
 app.use('/api/busnies', busniesRoutes);
 // 3. ADDED: Debug Endpoints
@@ -382,49 +385,126 @@ router.get('/agency/:id', async (req, res) => {
 });
 
 
-// Add this right after transporter creation
+
+
+
+// Public agency profile
+// router.get('/api/agencies/:id', async (req, res) => {
+//   try {
+//     const agency = await AgencyModel.findById(req.params.id)
+//       .select('name description logo services contactPublic');
+//     res.json(agency);
+//   } catch (error) {
+//     res.status(404).json({ message: 'Agency not found' });
+//   }
+// });
+
+// // Private agency dashboard (requires auth)
+// router.get('/api/my-agency', authenticateAgency, async (req, res) => {
+//   try {
+//     const agency = await AgencyModel.findById(req.user.agencyId)
+//       .select('+email +stats +earnings +internalNotes');
+//     res.json(agency);
+//   } catch (error) {
+//     res.status(500).json({ message: 'Error fetching agency data' });
+//   }
+// });
+
+// // Add this right after transporter creation
 transporter.verify((error) => {
   if (error) {
     console.error('❌ Email config error:', error);
   } else {
     console.log('✅ Email service ready');
     
-    // Test with a REAL email address
-    const testEmail = 'your-real-email@gmail.com'; // CHANGE THIS
+    // Optional: Send test email on startup
     transporter.sendMail({
-      from: `"CipherERP" <${process.env.EMAIL_USER}>`,
-      to: testEmail,
-      subject: 'Test OTP System',
-      text: 'This confirms your email setup is working'
+      from: '"COHORT Portal" <cohort@gmail.com>',
+      to: process.env.ADMIN_EMAIL || 'admin@example.com',
+      subject: 'Email Service Active',
+      text: 'COHORT email service is running'
     })
-    .then(info => console.log('Test email sent to:', testEmail))
-    .catch(err => console.error('Test email failed:', err));
+    .then(() => console.log('System test email sent'))
+    .catch(console.error);
   }
 });
 
 
-// Add this test route to your index.js
-app.get('/direct-test', async (req, res) => {
+
+
+
+
+
+
+
+
+
+
+router.get("/:id", async (req, res) => {
   try {
-    const info = await transporter.sendMail({
-      from: '"CipherERP" <yashveersingh7648@gmail.com>',
-      to: 'yashveersingh7648@gmail.com',
-      subject: 'DIRECT TEST - Please check spam',
-      text: 'If you receive this, OTP system will work',
-      html: '<p><strong>This is a direct test email</strong></p>'
-    });
-    res.json({ 
-      success: true,
-      message: 'Test email sent to yashveersingh7648@gmail.com',
-      messageId: info.messageId
-    });
+    // Validate ID format
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid agency ID format" });
+    }
+
+    const agency = await AgencyModel.findById(req.params.id);
+    if (!agency) {
+      return res.status(404).json({ message: "Agency not found" });
+    }
+
+    // Generate full URLs for files
+    const response = {
+      ...agency._doc,
+      companyLogo: agency.companyLogo 
+        ? `${req.protocol}://${req.get('host')}/uploads/${agency.companyLogo}`
+        : null,
+      companyBanner: agency.companyBanner
+        ? `${req.protocol}://${req.get('host')}/uploads/${agency.companyBanner}`
+        : null,
+      profilePdf: agency.profilePdf
+        ? `${req.protocol}://${req.get('host')}/uploads/${agency.profilePdf}`
+        : null
+    };
+
+    res.json(response);
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ message: "Server error" });
   }
 });
+
+
+
+
+
+router.post('/login', async (req, res) => {
+  try {
+    const agency = await AgencyModel.findOne({ companyEmail: req.body.email });
+    if (!agency) {
+      return res.status(404).json({ message: 'Agency not found' });
+    }
+
+    // Add your password comparison logic here
+    const isMatch = await comparePasswords(req.body.password, agency.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    const token = generateToken(agency._id);
+
+    res.json({
+      token,
+      user: {
+        id: agency._id, // Make sure this is included
+        email: agency.companyEmail,
+        name: agency.companyName,
+        // Include other fields you need
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
