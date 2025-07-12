@@ -25,7 +25,7 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 const otpRoutes = require('./routes/otpRoutes');
 const transporter = require('./utils/emailSender');
-const authenticateAgency = require("./middleware/authenticateAgency");
+// const authenticateAgency = require("./middleware/authenticateAgency");
 
 // 1. FIXED: Correct Static Files Configuration
 const publicDir = path.join(__dirname, 'public');
@@ -124,9 +124,11 @@ app.use(limiter);
 app.use("/api/submit", submitRoutes);
 app.use("/api/dashboard", dashboardRoutes);
  app.use('/api', otpRoutes);
- app.use('/api/agencies', agencyRoutes);
+// app.use('/api/agency', agencyRoutes);
 // Routes
 app.use('/api/busnies', busniesRoutes);
+
+app.use('/api/companies', agencyRoutes); 
 // 3. ADDED: Debug Endpoints
 app.get('/file-info', (req, res) => {
   try {
@@ -169,49 +171,134 @@ app.get("/health", (req, res) => {
 // Authentication Routes (unchanged)
 // 🌐 AUTH ROUTES
 // 🧾 User Register
+// app.post("/api/register", async (req, res) => {
+//   const { name, email, password } = req.body;
+//   if (!email || !password || !name) {
+//     return res.status(400).json({ error: "All fields required" });
+//   }
+
+//   try {
+//     const exists = await User.findOne({ email });
+//     if (exists) return res.status(400).json({ error: "User already exists" });
+
+//     const hashed = await bcrypt.hash(password, 10);
+//     const user = new User({ name, email, password: hashed });
+//     await user.save();
+//     res.json({ message: "Registered successfully" });
+//   } catch (err) {
+//     console.error("Register error:", err);
+//     res.status(500).json({ error: "Registration failed" });
+//   }
+// });
+
+
+// // 🔐 User Login
+// app.post("/api/login", async (req, res) => {
+//   const { email, password } = req.body;
+
+//   try {
+//     const user = await User.findOne({ email });
+//     if (!user) return res.status(401).json({ error: "User not found" });
+
+//     const match = await bcrypt.compare(password, user.password);
+//     if (!match) return res.status(401).json({ error: "Invalid credentials" });
+
+//     const token = jwt.sign({ email }, process.env.JWT_SECRET, {
+//       expiresIn: "1h"
+//     });
+
+//     res.json({ token });
+//   } catch (err) {
+//     console.error("Login error:", err);
+//     res.status(500).json({ error: "Login failed" });
+//   }
+// });
+
+
+
+// Routes
 app.post("/api/register", async (req, res) => {
   const { name, email, password } = req.body;
+  
   if (!email || !password || !name) {
     return res.status(400).json({ error: "All fields required" });
   }
 
   try {
-    const exists = await User.findOne({ email });
+    const exists = await User.findOne({ email: email.toLowerCase().trim() });
     if (exists) return res.status(400).json({ error: "User already exists" });
 
-    const hashed = await bcrypt.hash(password, 10);
-    const user = new User({ name, email, password: hashed });
+    const user = new User({ 
+      name, 
+      email: email.toLowerCase().trim(), 
+      password 
+    });
+    
     await user.save();
-    res.json({ message: "Registered successfully" });
+    
+    res.status(201).json({ 
+      success: true,
+      message: "Registered successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email
+      }
+    });
   } catch (err) {
     console.error("Register error:", err);
-    res.status(500).json({ error: "Registration failed" });
+    res.status(500).json({ 
+      error: "Registration failed",
+      details: process.env.NODE_ENV === 'development' ? err.message : null
+    });
   }
 });
 
-
-// 🔐 User Login
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ error: "User not found" });
+    const user = await User.findOne({ email: email.toLowerCase().trim() })
+                          .select('+password');
+    
+    if (!user) {
+      return res.status(401).json({ 
+        error: "Invalid credentials",
+        message: "No user found with this email"
+      });
+    }
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ error: "Invalid credentials" });
+    if (!match) {
+      return res.status(401).json({ 
+        error: "Invalid credentials",
+        message: "Incorrect password"
+      });
+    }
 
-    const token = jwt.sign({ email }, process.env.JWT_SECRET, {
-      expiresIn: "1h"
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({ 
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email
+      }
     });
-
-    res.json({ token });
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ error: "Login failed" });
+    res.status(500).json({ 
+      error: "Login failed",
+      details: process.env.NODE_ENV === 'development' ? err.message : null
+    });
   }
 });
-
 // Email Service (unchanged)
 // // 📤 EMAIL CONTACT FORM
 app.post("/api/contact-email", async (req, res) => {
@@ -476,34 +563,34 @@ router.get("/:id", async (req, res) => {
 
 
 
-router.post('/login', async (req, res) => {
-  try {
-    const agency = await AgencyModel.findOne({ companyEmail: req.body.email });
-    if (!agency) {
-      return res.status(404).json({ message: 'Agency not found' });
-    }
+// router.post('/login', async (req, res) => {
+//   try {
+//     const agency = await AgencyModel.findOne({ companyEmail: req.body.email });
+//     if (!agency) {
+//       return res.status(404).json({ message: 'Agency not found' });
+//     }
 
-    // Add your password comparison logic here
-    const isMatch = await comparePasswords(req.body.password, agency.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
+//     // Add your password comparison logic here
+//     const isMatch = await comparePasswords(req.body.password, agency.password);
+//     if (!isMatch) {
+//       return res.status(400).json({ message: 'Invalid credentials' });
+//     }
 
-    const token = generateToken(agency._id);
+//     const token = generateToken(agency._id);
 
-    res.json({
-      token,
-      user: {
-        id: agency._id, // Make sure this is included
-        email: agency.companyEmail,
-        name: agency.companyName,
-        // Include other fields you need
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+//     res.json({
+//       token,
+//       user: {
+//         id: agency._id, // Make sure this is included
+//         email: agency.companyEmail,
+//         name: agency.companyName,
+//         // Include other fields you need
+//       }
+//     });
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// });
 
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
